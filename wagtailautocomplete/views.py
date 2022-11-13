@@ -5,7 +5,11 @@ from django.contrib.contenttypes.models import ContentType
 from django.http import (HttpResponseBadRequest, HttpResponseForbidden,
                          HttpResponseNotFound, JsonResponse)
 from django.views.decorators.http import require_GET, require_POST
+from django.db.models import Max, Func
 
+
+class IsNull(Func):
+    template = '%(expressions)s IS NULL'
 
 def render_page(page):
     if getattr(page, 'specific', None):
@@ -65,9 +69,13 @@ def search(request):
 
     field_name = getattr(model, 'autocomplete_search_field', 'title')
     lookup_type = getattr(model, 'autocomplete_lookup_type', 'icontains')
+    ordering = getattr(model, 'autocomplete_ordering')
     filter_kwargs = dict()
     filter_kwargs[field_name + '__' + lookup_type] = search_query
-    queryset = model.objects.filter(**filter_kwargs)
+    queryset = model.objects.filter(**filter_kwargs) \
+        .annotate(ordering_max=Max(ordering)) \
+        .annotate(ordering_null=IsNull('ordering_max')) \
+        .order_by('ordering_null', '-ordering_max')
 
     if getattr(queryset, 'live', None):
         # Non-Page models like Snippets won't have a live/published status
